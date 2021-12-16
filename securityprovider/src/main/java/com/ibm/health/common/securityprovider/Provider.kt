@@ -24,7 +24,7 @@ private val lazySecurityProviderInstaller by lazy {
     // Disable patented algorithms in Bouncy Castle
     System.setProperty("org.bouncycastle.ec.disable_mqv", "true")
     try {
-        Security.removeProvider("BC")
+        // Security.removeProvider("BC")
     } catch (e: Throwable) {
         Lumber.w(e) { "Provider BC not found. Removal failed." }
     }

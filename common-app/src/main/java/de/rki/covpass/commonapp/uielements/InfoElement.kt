@@ -47,7 +47,7 @@ public class InfoElement @JvmOverloads constructor(
     }
 
     public var subtitleStyle: Int by Delegates.observable(R.style.DefaultText_OnBackground70) { _, _, newValue ->
-        binding.infoSubtitle.setTextAppearance(newValue)
+        // binding.infoSubtitle.setTextAppearance(newValue)
     }
 
     public var subtitleTopMarginDimenRes: Int by Delegates.observable(R.dimen.grid_zero) { _, _, newValue ->
@@ -74,7 +74,7 @@ public class InfoElement @JvmOverloads constructor(
     }
 
     public var descriptionStyle: Int by Delegates.observable(R.style.DefaultText_OnBackground) { _, _, newValue ->
-        binding.infoDescription.setTextAppearance(newValue)
+        // binding.infoDescription.setTextAppearance(newValue)
     }
 
     public var descriptionTopMarginDimenRes: Int by Delegates.observable(R.dimen.grid_one) { _, _, newValue ->
