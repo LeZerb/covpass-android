@@ -1,4 +1,4 @@
-# android-covpass-app
+# android-covpass-app (Android 5)
 
 This repo contains the CovPass app (with modifications to make it run on Android 5) and commonly needed modules for Kotlin + Android.
 
