@@ -13,7 +13,9 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import com.ensody.reactivestate.android.autoRun
+import com.ensody.reactivestate.android.reactiveState
 import com.ensody.reactivestate.get
+import com.google.android.material.tabs.TabLayout
 import com.ibm.health.common.android.utils.viewBinding
 import com.ibm.health.common.navigation.android.FragmentNav
 import com.ibm.health.common.navigation.android.findNavigator
@@ -22,15 +24,17 @@ import de.rki.covpass.checkapp.databinding.CovpassCheckMainBinding
 import de.rki.covpass.checkapp.information.CovPassCheckInformationFragmentNav
 import de.rki.covpass.checkapp.scanner.CovPassCheckCameraDisclosureFragmentNav
 import de.rki.covpass.checkapp.scanner.CovPassCheckQRScannerFragmentNav
+import de.rki.covpass.commonapp.BackgroundUpdateViewModel
+import de.rki.covpass.commonapp.BackgroundUpdateViewModel.Companion.UPDATE_INTERVAL_HOURS
 import de.rki.covpass.commonapp.BaseFragment
 import de.rki.covpass.commonapp.dependencies.commonDeps
+import de.rki.covpass.commonapp.storage.OnboardingRepository
 import de.rki.covpass.commonapp.truetime.TimeValidationState
 import de.rki.covpass.commonapp.uielements.showWarning
 import de.rki.covpass.commonapp.utils.isCameraPermissionGranted
 import de.rki.covpass.sdk.dependencies.sdkDeps
 import de.rki.covpass.sdk.storage.DscRepository
 import de.rki.covpass.sdk.utils.formatDateTime
-import de.rki.covpass.sdk.worker.isDscListUpToDate
 import kotlinx.parcelize.Parcelize
 import java.time.Instant
 import java.time.LocalDateTime
@@ -45,6 +49,8 @@ public class MainFragmentNav : FragmentNav(MainFragment::class)
 internal class MainFragment : BaseFragment() {
 
     private val binding by viewBinding(CovpassCheckMainBinding::inflate)
+    private val backgroundUpdateViewModel by reactiveState { BackgroundUpdateViewModel(scope) }
+    private val viewModel by reactiveState { MainViewModel(scope) }
 
     private val dscRepository get() = sdkDeps.dscRepository
     private val rulesUpdateRepository get() = sdkDeps.rulesUpdateRepository
@@ -56,11 +62,21 @@ internal class MainFragment : BaseFragment() {
         }
         binding.mainCheckCertButton.setOnClickListener {
             if (isCameraPermissionGranted(requireContext())) {
-                findNavigator().push(CovPassCheckQRScannerFragmentNav())
+                findNavigator().push(CovPassCheckQRScannerFragmentNav(viewModel.isTwoGOn.value))
             } else {
-                findNavigator().push(CovPassCheckCameraDisclosureFragmentNav())
+                findNavigator().push(CovPassCheckCameraDisclosureFragmentNav(viewModel.isTwoGOn.value))
             }
         }
+        binding.mainCheckCertTabLayout.addOnTabSelectedListener(
+            object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab?) {
+                    viewModel.isTwoGOn.value = tab?.position == 1
+                }
+
+                override fun onTabUnselected(tab: TabLayout.Tab?) {}
+                override fun onTabReselected(tab: TabLayout.Tab?) {}
+            }
+        )
         ViewCompat.setAccessibilityDelegate(
             binding.mainHeaderTextview,
             object : AccessibilityDelegateCompat() {
@@ -113,11 +129,42 @@ internal class MainFragment : BaseFragment() {
                 }
             }.let { }
         }
+        autoRun {
+            updateScannerCard(get(viewModel.isTwoGOn))
+        }
+        if (commonDeps.onboardingRepository.dataPrivacyVersionAccepted.value
+            != OnboardingRepository.CURRENT_DATA_PRIVACY_VERSION
+        ) {
+            findNavigator().push(DataProtectionFragmentNav())
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        if (viewModel.isTwoGOn.value) {
+            binding.mainCheckCertTabLayout.getTabAt(1)?.select()
+        } else {
+            binding.mainCheckCertTabLayout.getTabAt(0)?.select()
+        }
         commonDeps.timeValidationRepository.validate()
+        backgroundUpdateViewModel.update()
+    }
+
+    private fun updateScannerCard(isTwoG: Boolean) {
+        if (isTwoG) {
+            binding.mainCheckCertHeaderTextview.setText(R.string.validation_start_screen_scan_title_2G)
+            binding.mainCheckCertInfoTextview.setText(R.string.validation_start_screen_scan_message_2G)
+            binding.mainCheckCertButton.setText(R.string.validation_start_screen_scan_action_button_title)
+        } else {
+            binding.mainCheckCertHeaderTextview.setText(R.string.validation_start_screen_scan_title)
+            binding.mainCheckCertInfoTextview.setText(R.string.validation_start_screen_scan_message)
+            binding.mainCheckCertButton.setText(R.string.validation_start_screen_scan_action_button_title)
+        }
+    }
+
+    private fun isDscListUpToDate(lastUpdate: Instant): Boolean {
+        val dscUpdateIntervalSeconds = UPDATE_INTERVAL_HOURS * 60 * 60
+        return lastUpdate.isAfter(Instant.now().minusSeconds(dscUpdateIntervalSeconds))
     }
 
     private fun updateAvailabilityCard(lastUpdate: Instant, lastRulesUpdate: Instant) {

@@ -49,6 +49,7 @@ internal class MainFragmentNav : FragmentNav(MainFragment::class)
 internal interface NotificationEvents : BaseEvents {
     fun showExpiryNotification()
     fun showNewUpdateInfo()
+    fun showNewDataPrivacy()
     fun showCheckerRemark()
     fun showBoosterNotification()
 }
@@ -62,10 +63,12 @@ internal class MainFragment :
     DetailCallback,
     DialogListener,
     UpdateInfoCallback,
+    DataProtectionCallback,
     CheckRemarkCallback,
     NotificationEvents {
 
     private val viewModel by reactiveState { MainViewModel(scope) }
+    private val covPassBackgroundUpdateViewModel by reactiveState { CovPassBackgroundUpdateViewModel(scope) }
     private val binding by viewBinding(CovpassMainBinding::inflate)
     private var fragmentStateAdapter: CertificateFragmentStateAdapter by validUntil(::onDestroyView)
     override val announcementAccessibilityRes: Int = R.string.accessibility_start_screen_info_announce
@@ -79,6 +82,11 @@ internal class MainFragment :
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        covPassBackgroundUpdateViewModel.update()
+    }
+
     private fun setupViews() {
         ViewCompat.setAccessibilityDelegate(
             binding.mainEmptyHeaderTextview,
@@ -90,14 +98,26 @@ internal class MainFragment :
             }
         )
         binding.mainAddButton.setOnClickListener { showAddCovCertificatePopup() }
-        binding.mainValidityCheckLayout.setOnClickListener { findNavigator().push(ValidityCheckFragmentNav()) }
-        binding.mainSettingsImagebutton.setOnClickListener { findNavigator().push(CovPassInformationFragmentNav()) }
+        binding.mainValidityCheckLayout.setOnClickListener {
+            showValidityCheck(covpassDeps.certRepository.certs.value)
+        }
+        binding.mainSettingsImagebutton.setOnClickListener {
+            findNavigator().push(CovPassInformationFragmentNav())
+        }
         fragmentStateAdapter = CertificateFragmentStateAdapter(this)
         fragmentStateAdapter.attachTo(binding.mainViewPager)
         TabLayoutMediator(binding.mainTabLayout, binding.mainViewPager) { _, _ ->
             // no special tab config necessary
         }.attach()
         setupPageChangeCallback()
+    }
+
+    private fun showValidityCheck(certificateList: GroupedCertificatesList) {
+        if (certificateList.getValidCertificates().isEmpty()) {
+            showInvalidCertValidationDialog()
+        } else {
+            findNavigator().push(ValidityCheckFragmentNav())
+        }
     }
 
     private fun setupPageChangeCallback() {
@@ -134,6 +154,15 @@ internal class MainFragment :
         showDialog(dialogModel, childFragmentManager)
     }
 
+    private fun showInvalidCertValidationDialog() {
+        val dialogModel = DialogModel(
+            titleRes = R.string.no_cert_applicable_for_validation_dialog_header,
+            messageString = getString(R.string.no_cert_applicable_for_validation_dialog_message),
+            positiveButtonTextRes = R.string.no_cert_applicable_for_validation_positive_button_text,
+        )
+        showDialog(dialogModel, childFragmentManager)
+    }
+
     override fun displayCert(certId: GroupedCertificatesId) {
         viewModel.selectedCertId = certId
         binding.mainViewPager.setCurrentItem(fragmentStateAdapter.getItemPosition(certId), isResumed)
@@ -149,6 +178,11 @@ internal class MainFragment :
     }
 
     override fun onCheckRemarkFinish() {
+        viewModel.showingNotification = false
+        viewModel.validateNotifications()
+    }
+
+    override fun onDataProtectionFinish() {
         viewModel.showingNotification = false
         viewModel.validateNotifications()
     }
@@ -183,6 +217,10 @@ internal class MainFragment :
 
     override fun showNewUpdateInfo() {
         findNavigator().push(UpdateInfoCovpassFragmentNav())
+    }
+
+    override fun showNewDataPrivacy() {
+        findNavigator().push(DataProtectionFragmentNav())
     }
 
     override fun showCheckerRemark() {

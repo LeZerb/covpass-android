@@ -38,6 +38,12 @@ public interface HttpConfig {
 
     /** Creates a Ktor `HttpClient` with correct TLS settings and optionally with an additional config [block]. */
     public fun ktorClient(block: HttpClientConfig<OkHttpConfig>.() -> Unit = {}): HttpClient
+
+    /** Returns true if the provided URL's hostname public key is pinned */
+    public fun hasPublicKey(url: String): Boolean
+
+    /** Sets UserAgent for the Ktor client */
+    public fun setUserAgent(userAgent: String)
 }
 
 /**
@@ -54,9 +60,33 @@ public fun HttpConfig.pinPublicKey(certs: List<X509Certificate>) {
     }
 }
 
+/**
+ * Enables public key pinning for the given list of [X509Certificates][X509Certificate] and the hosts defined within (Validation as a Service).
+ */
+public fun HttpConfig.pinVaasPublicKey(certs: List<X509Certificate>) {
+    for (cert in certs) {
+        for (san in cert.subjectAlternativeNames) {
+            // Check if this is a DNS SAN (code 2)
+            if (san.size >= 2 && san[0] == 2 && san[1] is String) {
+                val pattern = san[1] as String
+                vaasCertificatePatterns.add(pattern)
+                pinPublicKey(pattern, cert)
+            }
+        }
+    }
+}
+
 /** Enables public key pinning for the given [pattern] using a list of [X509Certificates][X509Certificate]. */
 public fun HttpConfig.pinPublicKey(pattern: String, certs: List<X509Certificate>) {
     for (cert in certs) {
+        pinPublicKey(pattern, cert)
+    }
+}
+
+/** Enables public key pinning for the given [pattern] using a list of [X509Certificates][X509Certificate] for Validation as a Service. */
+public fun HttpConfig.pinVaasPublicKey(pattern: String, certs: List<X509Certificate>) {
+    for (cert in certs) {
+        vaasCertificatePatterns.add(pattern)
         pinPublicKey(pattern, cert)
     }
 }
@@ -65,6 +95,8 @@ public fun HttpConfig.pinPublicKey(pattern: String, certs: List<X509Certificate>
 public fun HttpConfig.pinPublicKey(pattern: String, cert: X509Certificate) {
     pinPublicKey(pattern, CertificatePinner.pin(cert))
 }
+
+public var vaasCertificatePatterns: MutableList<String> = mutableListOf()
 
 /** The global [HttpConfig] instance. */
 public var httpConfig: HttpConfig = DefaultHttpConfig()
@@ -77,6 +109,7 @@ internal fun resetHttpConfig() {
 private class DefaultHttpConfig : HttpConfig {
     private var frozen = false
     private var logging: HttpLogLevel = HttpLogLevel.NONE
+    private var userAgent: String? = null
 
     private fun checkFrozen() {
         // This is meant as a security measure, so you don't mistakenly enable logging or change configs after the fact.
@@ -169,6 +202,11 @@ private class DefaultHttpConfig : HttpConfig {
                 requestTimeoutMillis = 15_000
                 socketTimeoutMillis = 15_000
             }
+            userAgent?.let {
+                install(UserAgent) {
+                    agent = it
+                }
+            }
             defaultRequest {
                 url {
                     protocol = URLProtocol.HTTPS
@@ -176,6 +214,17 @@ private class DefaultHttpConfig : HttpConfig {
             }
             block()
         }
+
+    override fun hasPublicKey(url: String): Boolean {
+        val hostname = Url(url).host
+        return okHttpClient.certificatePinner.pins.filter {
+            it.pattern in vaasCertificatePatterns
+        }.any { it.matchesHostname(hostname) }
+    }
+
+    override fun setUserAgent(userAgent: String) {
+        this.userAgent = userAgent
+    }
 }
 
 /** Represents the amount of logging. */
